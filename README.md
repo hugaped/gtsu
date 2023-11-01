@@ -1,1 +1,78 @@
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
 # gtsu
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+`gtsu` is intended to be used by members of the University of Bristol’s
+NICE Guidelines Technical Support Unit (NICE GTSU). It allows handling
+of data in a format that is typically provided by NICE, converting it
+into a format that can be used in WinBUGS or OpenBUGS (the aim is to
+eventually also allow format for JAGS).
+
+Users then can either run a model using `R2OpenBUGS` or `R2WinBUGS`,
+with code that they have written and edited themselves, thus allowing
+for more complex models than other NMA packages.
+
+`gtsu` then saves model results in several formats that can then be used
+to generate results and outputs (e.g. plots) that are standardised to
+match those expected by NICE.
+
+## Installation
+
+`gtsu` only exists as a package on GitHub and will not be listed on
+CRAN. You can therefore install the development version of `gtsu` like
+so using the `devtools` package:
+
+``` r
+# First install devtools
+install.packages("devtools")
+
+# Then install gtsu directly from GitHub
+devtools::install_github("hugaped/gtsu")
+```
+
+## Workflow
+
+No examples are currently included due to confidentiality of NICE data.
+But the general steps are:
+
+- Initialise file structure required for `gtsu` within a desired working
+  directory
+- Read in data from xlsx sent by NICE to data frame in R
+- Clean data - much of this will be specific to the project and so
+  cannot be automated, though some functions can help with this
+  (e.g. `convert.numeric()` to convert relevant columns to numeric data)
+- Convert long (or eventually wide) continuous or data to wide format
+  used in BUGS and JAGS, including coding of treatments/classes
+- Analysis is then performed by user using `R2OpenBUGS` or `R2WinBUGS`,
+  using scripts saved in `BUGSmodels` directory - can be done directly
+  using code from R, or by hand by first using R to save the required
+  data, and initial values which can be copied into a BUGS file.
+- Model outputs are saved into both .rds files and as a worksheet in
+  `BUGSresults/bugsresults.xlsx` - this allows users to run
+  OpenBUGS/WinBUGS manually and then copy and paste posterior summaries
+  (without the need to run BUGS directly from R).
+- Excel workbooks of results can be generated, and various plots can be
+  used to explore results
+
+## Naming conventions
+
+Parameters should ideally be named in BUGS codes in the following way to
+ensure consistency within the package. However, you can also specify
+different node/parameter names when creating outputs in `gtsu`.
+
+- `d`: pooled relative treatment effects
+- `m`: pooled relative class effects
+- `diff` / `or`: treatment-level mean differences / odds ratios between
+  all treatments in the dataset
+- `diffClass` / `orClass`: class-level mean differences / odds ratios
+  between all classes in the dataset
+- \`sd\`\`: between-study SD
+- `sd2`: within-class SD
+- `rk`: treatment-level rankings
+- `rkClass`: class-level rankings
+- `dev`: residual deviance contributions
+- `totresdev`: total residual deviance
