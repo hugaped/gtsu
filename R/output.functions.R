@@ -351,6 +351,11 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   }
 
   if (nrow(out.df)>0) {
+
+    if (nrow(out.df)!=length(trt)) {
+      stop("Number of treatment codes does not equal number of treatment effects")
+    }
+
     out.df <- data.frame("Treatment"=trt, "Median"=c(0,round(out.df$median, decimals)),
                          "Lower95"=c(0,round(out.df$val2.5pc, decimals)),
                          "Upper95"=c(0,round(out.df$val97.5pc, decimals)),
@@ -411,6 +416,10 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   }
 
   if (nrow(out.df)>0) {
+    if (nrow(out.df)!=length(trt)) {
+      stop("Number of class codes does not equal number of class effects")
+    }
+
     out.df <- data.frame("Class"=trt, "Median"=c(0, round(out.df$median, decimals)),
                          "Lower95"=c(0, round(out.df$val2.5pc, decimals)),
                          "Upper95"=c(0, round(out.df$val97.5pc, decimals)),
@@ -731,8 +740,9 @@ getmodfit <- function(bugsmod, bugsdat, res.format="rds", modnam="NMA", decimals
         sdres[,c("val2.5pc", "median", "val97.5pc")] <- sdres[,c("val2.5pc", "median", "val97.5pc")] * scalesd
       }
 
-      sd2 <- round(sdres, decimals)
-      modfit$SDclass <- paste(sd2, collapse=", ")
+      #sd2 <- round(sdres, decimals)
+      modfit$SDclass <- neatcri(sdres, decimals = decimals)
+      #modfit$SDclass <- paste(sd2, collapse=", ")
     }
 
 
