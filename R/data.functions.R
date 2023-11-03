@@ -12,25 +12,35 @@
 #' @export
 init.dir <- function(wd=NULL) {
 
-  checkmate::assertCharacter(wd, null.ok=TRUE)
+  checkmate::assertCharacter(wd, null.ok=TRUE,
+                             overwrite=FALSE)
 
   storewd <- getwd()
 
   setwd(wd)
 
-  dir.create("Results")
-  dir.create("Results/Codas")
-  dir.create("Plots")
-  dir.create("BUGSdata")
-  dir.create("BUGSresults")
-  dir.create("BUGSmodels")
-  dir.create("JAGSmodels")
+  folders <- c("Results",
+               "Results/Codas",
+               "Plots",
+               "BUGSdata",
+               "BUGSresults",
+               "BUGSmodels",
+               "JAGSmodels")
+  for (i in seq_along(folders)) {
+    if (!dir.exists(folders[i])) {
+      dir.create(folders[i])
+    }
+  }
 
-  wb <- openxlsx::createWorkbook(title="BUGSResults")
-  openxlsx::addWorksheet(wb, sheet="Intro")
-  openxlsx::writeData(wb, sheet="Intro", x=c("This file contains all the posterior summary statistics from different analyses",
-                                             "Each analysis should be saved in a new tab"))
-  openxlsx::saveWorkbook(wb, file="BUGSresults/bugsresults.xlsx")
+  if (!file.exists("BUGSresults/bugsresults.xlsx")) {
+    wb <- openxlsx::createWorkbook(title="BUGSResults")
+    openxlsx::addWorksheet(wb, sheet="Intro")
+    openxlsx::writeData(wb, sheet="Intro", x=c("This file contains all the posterior summary statistics from different analyses",
+                                               "Each analysis should be saved in a new tab"))
+    openxlsx::saveWorkbook(wb, file="BUGSresults/bugsresults.xlsx", overwrite=overwrite)
+  } else {
+    warning("bugsresults.xlsx already exists and so will not be overwritten")
+  }
 
   setwd(storewd)
 }
