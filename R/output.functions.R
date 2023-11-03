@@ -350,9 +350,12 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
     message(paste0("Treatment effects back-transformed from SMD using a standardising SD of: ", scalesd))
   }
 
+  temp <<- out.df
+  temp2 <<- trt
+
   if (nrow(out.df)>0) {
 
-    if (nrow(out.df)!=length(trt)) {
+    if (nrow(out.df)!=length(trt[-1])) {
       stop("Number of treatment codes does not equal number of treatment effects")
     }
 
@@ -416,7 +419,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   }
 
   if (nrow(out.df)>0) {
-    if (nrow(out.df)!=length(trt)) {
+    if (nrow(out.df)!=length(trt[-1])) {
       stop("Number of class codes does not equal number of class effects")
     }
 
