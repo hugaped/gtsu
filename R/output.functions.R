@@ -343,6 +343,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
     trt <- c(ref, as.character(out.df$treat))
   } else {
     out.df <- bugsres[grepl(paste0("^", node.names$d, "\\["), bugsres$node),]
+    out.df <- out.df[out.df$node!="d[1]",]
   }
 
   if (!is.null(scalesd)) {
@@ -350,8 +351,6 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
     message(paste0("Treatment effects back-transformed from SMD using a standardising SD of: ", scalesd))
   }
 
-  temp <<- out.df
-  temp2 <<- trt
 
   if (nrow(out.df)>0) {
 
@@ -411,6 +410,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
     trt <- c(ref, as.character(out.df$treat))
   } else {
     out.df <- bugsres[grepl(paste0("^", node.names$m, "\\["), bugsres$node),]
+    out.df <- out.df[out.df$node!="D[1]",]
   }
 
   if (!is.null(scalesd)) {
