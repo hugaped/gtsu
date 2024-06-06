@@ -331,7 +331,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   if (ref!=trt[1]) {
 
     if (is.null(model.scale)) {
-      if (node.names$comps=="diff") {
+      if (node.names$comps %in% c("diff")) {
         model.scale <- "natural"
       } else if (node.names$comps=="or") {
         model.scale <- "log"
@@ -521,7 +521,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   # Add all TREATMENT relative effects
   if (any(grepl(paste0("^", node.names$comps, "\\["), bugsres$node))) {
     rel.df <- writeallte(bugsdat=bugsdat, bugsres=bugsres, umeres=umeres, decimals=decimals, level="treat",
-                         scalesd=scalesd)
+                         scalesd=scalesd, node.names=node.names, model.scale=model.scale)
 
     openxlsx::addWorksheet(wb=wb, sheetName="Treatment Direct Effects")
     openxlsx::writeDataTable(wb=wb, sheet="Treatment Direct Effects", rel.df, keepNA=FALSE)
@@ -554,7 +554,7 @@ bugstoexcel <- function(outcome="SMD_severe", bugsdat=NULL, modnam="RE random cl
   # Add all CLASS relative effects
   if (any(grepl(paste0("^", node.names$compsClass, "\\["), bugsres$node))) {
     rel.df <- writeallte(bugsdat=bugsdat, bugsres=bugsres, umeres=umeres, decimals=decimals, level="class",
-                         scalesd=scalesd)
+                         scalesd=scalesd, node.names=node.names, model.scale=model.scale)
 
     openxlsx::addWorksheet(wb=wb, sheetName="Class Direct Effects")
     openxlsx::writeDataTable(wb=wb, sheet="Class Direct Effects", rel.df, keepNA=FALSE)
@@ -760,24 +760,27 @@ getmodfit <- function(bugsmod, bugsdat, res.format="rds", modnam="NMA", decimals
 #' @param level takes either `"treat"` or `"class"`
 #' @inheritParams bugstoexcel
 #'
-writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat", scalesd=NULL) {
+writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat", scalesd=NULL,
+                       node.names, model.scale="log") {
 
   if (level=="treat") {
 
-    if (any(grepl("^diff\\[", bugsres$node))) {   # Continuous results (mean differences)
-      out.df <- bugsres[grepl("^diff\\[", bugsres$node),]
-    } else if (any(grepl("^or\\[", bugsres$node))) {    # Binary results (odds ratios)
-      out.df <- bugsres[grepl("^or\\[", bugsres$node),]
-    }
+    # if (any(grepl("^diff\\[", bugsres$node))) {   # Continuous results (mean differences)
+    #   out.df <- bugsres[grepl("^diff\\[", bugsres$node),]
+    # } else if (any(grepl("^or\\[", bugsres$node))) {    # Binary results (odds ratios)
+    #   out.df <- bugsres[grepl("^or\\[", bugsres$node),]
+    # }
+    out.df <- bugsres[grepl(paste0("^", node.names$comps, "\\["), bugsres$node),]
 
     trtcodes <- bugsdat$trtcodes %>% select(treat, treatcode)
   } else if (level=="class") {
 
-    if (any(grepl("^diffClass\\[", bugsres$node))) {    # Continuous results (mean differences)
-      out.df <- bugsres[grepl("^diffClass\\[", bugsres$node),]
-    } else if (any(grepl("^orClass\\[", bugsres$node))) {   # Binary results (odds ratios)
-      out.df <- bugsres[grepl("^orClass\\[", bugsres$node),]
-    }
+    # if (any(grepl("^diffClass\\[", bugsres$node))) {    # Continuous results (mean differences)
+    #   out.df <- bugsres[grepl("^diffClass\\[", bugsres$node),]
+    # } else if (any(grepl("^orClass\\[", bugsres$node))) {   # Binary results (odds ratios)
+    #   out.df <- bugsres[grepl("^orClass\\[", bugsres$node),]
+    # }
+    out.df <- bugsres[grepl(paste0("^", node.names$compsClass, "\\["), bugsres$node),]
 
     trtcodes <- unique(bugsdat$trtcodes %>% select(class, classcode))
   }
@@ -816,18 +819,22 @@ writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat",
     ume.df <- ume.df[ume.df$sd<95,]
 
     # Invert ume results (for continuous outcomes)
-    if (any(grepl("diff", bugsres$node))) {
+    # if (any(grepl("diff", bugsres$node))) {
+    if ("diff" %in% c(node.names$comps, node.names$compsClass)) {
       # Invert UME results for response and SMD
       ume.df[,c("val2.5pc", "median", "val97.5pc")] <-
         -ume.df[,c("val97.5pc", "median", "val2.5pc")]
     }
 
     # Convert to OR if required
-    if (grepl("^or", out.df$node[1])) {
+    # if (grepl("^or", out.df$node[1])) {
+    if (model.scale=="log") {
       ume.df[,c("val2.5pc", "median", "val97.5pc")] <- exp(ume.df[,c("val2.5pc", "median", "val97.5pc")])
       umedecimals <- decimals + 1
-    } else {
+    } else if (model.scale=="natural") {
       umedecimals <- decimals
+    } else {
+      stop("model.scale must be specified for incorporating UME direct effects")
     }
 
     if (!is.null(scalesd)) {
@@ -852,10 +859,11 @@ writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat",
     rel.df <- cbind(rel.df, ume.df[,grepl("Incon", names(ume.df))])
 
     # Calculate variances of NMa and Direct evidence
-    if (grepl("^or", out.df$node[1])) {
+    #if (grepl("^or", out.df$node[1])) {
+    if (model.scale=="log") {
       rel.df <- rel.df %>% mutate(Var = ((log(Median) - log(Lower95)) / 1.96) ^ 2,
                                   VarIncon = ((log(MedianIncon) - log(Lower95Incon)) / 1.96) ^ 2)
-    } else {
+    } else if (model.scale=="natural") {
       rel.df <- rel.df %>% mutate(Var = ((Median - Lower95) / 1.96) ^ 2,
                                   VarIncon = ((MedianIncon - Lower95Incon) / 1.96) ^ 2)
     }
@@ -873,10 +881,11 @@ writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat",
                                 VarInd= 1/wind
     )
 
-    if (grepl("^or", out.df$node[1])) {
+    # if (grepl("^or", out.df$node[1])) {
+    if (model.scale=="log") {
       rel.df <- rel.df %>% mutate(nma=log(Median),
                                   dir=log(MedianIncon))
-    } else {
+    } else if (model.scale=="natural") {
       rel.df <- rel.df %>% mutate(nma=(Median),
                                   dir=(MedianIncon))
     }
@@ -886,7 +895,8 @@ writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat",
                                 UpperInd = MedianInd + 1.96 * (VarInd ^ 0.5))
 
 
-    if (grepl("^or", out.df$node[1])) {
+    #if (grepl("^or", out.df$node[1])) {
+    if (model.scale=="log") {
       rel.df <- rel.df %>%
         mutate(MedianInd = exp(MedianInd),
                LowerInd = exp(LowerInd),
@@ -894,7 +904,7 @@ writeallte <- function(bugsdat, bugsres, umeres=NULL, decimals=2, level="treat",
                Dif = log(MedianInd) - log(MedianIncon)
         )
 
-    } else {
+    } else if (model.scale=="natural") {
       rel.df <- rel.df %>% mutate(Dif = (MedianInd) - (MedianIncon))
     }
 

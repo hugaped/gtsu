@@ -10,7 +10,9 @@ writeallte(
   umeres = NULL,
   decimals = 2,
   level = "treat",
-  scalesd = NULL
+  scalesd = NULL,
+  node.names,
+  model.scale = "log"
 )
 }
 \arguments{
@@ -24,6 +26,15 @@ model (i.e. data, treatment codes, etc.)}
 \item{scalesd}{A number indicating the SD to use for back-transforming SMD to a
 particular measurement scale. If left as \code{NULL} then no transformation will be
 performed (i.e. leave as \code{NULL} if not modelling SMDs)}
+
+\item{node.names}{A list of names of parameters/nodes as named in the BUGS model. Each
+element of the list should be a single character object with the name of the (monitored)
+parameter in the BUGS model that can be read from the BUGS output. See details for info
+on names, as well as default values.}
+
+\item{model.scale}{Indicates whether treatment effects are on \code{"log"} (e.g. OR, RoM) or
+\code{"natural"} (e.g. mean difference) scale. If left as \code{NULL} (the default) this will be
+inferred from the data.}
 }
 \description{
 Write relative effects for all comparisons in the network
