@@ -23,7 +23,11 @@ Imports:
     officer,
     ggplot2,
     openxlsx,
-    patchwork
+    patchwork,
+    multinma,
+    purrr,
+    rlang,
+    maggritr
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
