@@ -948,6 +948,25 @@ neatcri <- function(x, decimals=2, invert=FALSE) {
 
 
 
+#' Returns the posterior median and upper/lower 95%CrI as a string **based on multinma output**
+#'
+#' @param x A data frame containing variables for the lower 95%CrI, median, and upper
+#' 95%CrI of the posterior for each node
+#' @param colnams A vector of column names corresponding to
+#' c(`point estimate`, `lower interval`, `upper interval`)
+#'
+#' @export
+neatcri2 <- function(x, colnams=c("50%", "2.5%", "97.5%"), decimals=2) {
+
+  str <- paste0(round(x[[colnams[1]]], decimals), " (",
+                round(x[[colnams[2]]], decimals), ", ",
+                round(x[[colnams[3]]], decimals), ")"
+  )
+  return(str)
+}
+
+
+
 
 
 #' Writes summary BUGS data from RDS files of models to an xlsx file named "bugsresults.xlsx"
