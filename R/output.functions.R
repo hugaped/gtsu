@@ -969,6 +969,35 @@ neatcri2 <- function(x, colnams=c("50%", "2.5%", "97.5%"), decimals=2) {
 
 
 
+#' Helper function to get summary stats
+get_sum <- function(x) {
+  c(mean = mean(x), sd = sd(x), quantile(x, probs = c(0.025, 0.5, 0.975)))
+}
+
+
+
+
+#' Create posterior summaries for MCMC matrix
+summary_multinma_matrix <- function(x, probs=c(0.025,0.25,0.5,0.75,0.975)) {
+  p_mean <- apply(x, 2, mean)
+  p_sd <- apply(x, 2, sd)
+  qt <- function(x, probs, ...) {
+    if (all(is.na(x)))
+      setNames(rlang::rep_along(probs, NA_real_), paste0(probs *
+                                                           100, "%"))
+    else quantile(x, probs = probs, ...)
+  }
+  p_quan <- apply(x, 2, qt, probs = probs)
+  p_quan <- as.data.frame(t(p_quan))
+
+  ss <- tibble::tibble(parameter=colnames(x), mean = p_mean, sd = p_sd,
+                       !!!p_quan)
+  return(ss)
+}
+
+
+
+
 #' Writes summary BUGS data from RDS files of models to an xlsx file named "bugsresults.xlsx"
 #' @param outcomes a vector of outcome names to write from rds to xlsx
 #' @param overwrite indicates whether previous data should be overwritten or not
