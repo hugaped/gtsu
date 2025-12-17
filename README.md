@@ -4,6 +4,7 @@
 # gtsu
 
 <!-- badges: start -->
+
 <!-- badges: end -->
 
 `gtsu` is intended to be used by members of the University of Bristol’s
@@ -37,7 +38,10 @@ devtools::install_github("hugaped/gtsu")
 ## Workflow
 
 No examples are currently included due to confidentiality of NICE data.
-But the general steps are:
+But the general steps depend on whether analysis has been done in
+`WinBUGS` or `multinma`
+
+### WinBUGS Workflow
 
 - Initialise file structure required for `gtsu` within a desired working
   directory
@@ -58,7 +62,7 @@ But the general steps are:
 - Excel workbooks of results can be generated, and various plots can be
   used to explore results
 
-## Naming conventions
+#### Naming conventions
 
 Parameters should ideally be named in BUGS codes in the following way to
 ensure consistency within the package. However, you can also specify
@@ -76,3 +80,17 @@ different node/parameter names when creating outputs in `gtsu`.
 - `rkClass`: class-level rankings
 - `dev`: residual deviance contributions
 - `totresdev`: total residual deviance
+
+### `multinma` Workflow
+
+Much easier than using BUGS, as you only need to run a single function
+(`multinmatoexcel`). You feed in as arguments:
+
+- Your NMA model (and UME model if applicable) as `multinma` objects
+- The file path to save the .xslx output
+- Various other arguments that are similar (but simpler) to those in
+  `bugstoexcel`
+
+This makes the whole process much like running any other function in R.
+
+Further information can be found in the help file `?multinmatoexcel`
