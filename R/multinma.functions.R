@@ -10,6 +10,8 @@
 #' estimates from the NMA.
 #' @param outstr A string representing an outcome name. This is used to
 #' label the outputted Excel workbook.
+#' @param out.folder A string representing a folder path location. If the folder specified
+#' in `out.folder` does not exist then a new one will be created.
 #' @param modnam A string representing the name of the model used
 #' @param decimals The number of decimal places to which to report numerical results
 #' @param trt_ref The name of the reference treatment against which the pooled treatment
@@ -25,9 +27,8 @@
 #' @param scalesd A number indicating the SD to use for back-transforming SMD to a
 #' particular measurement scale. If left as `NULL` then no transformation will be
 #' performed (i.e. leave as `NULL` if not modelling SMDs)
-#' @param model.scale Indicates whether treatment effects are on `"log"` (e.g. OR, RoM) or
-#' `"natural"` (e.g. mean difference) scale. If left as `NULL` (the default) this will be
-#' inferred from the data.
+#' @param eform Indicates whether treatment effect outputs should be exponentiated or not
+#' (i.e. if model was on log scale).
 #' @param pval Numeric threshold for p-value for direct vs indirect estimates. Note that this is
 #' an approximation as it assumes the posterior is normally distributed, and the data is correlated
 #' ...i.e. it is not a true indicator of direct vs indirect (nodesplitting would be needed for that).
@@ -36,12 +37,13 @@
 #'
 #' @export
 multinmatoexcel <- function(nma, ume=NULL,
-                            outstr,
+                            outstr, out.folder="Results",
                             modnam="RE model",
-                            decimals=2, model.scale=NULL,
+                            decimals=2,
+                            eform=NULL, scalesd=NULL,
                             trt_ref=nma$network$treatments[1],
                             lower_better=TRUE,
-                            devplot=TRUE, netplot=TRUE, forestplot=TRUE, rankplot=FALSE, scalesd=NULL,
+                            devplot=TRUE, netplot=TRUE, forestplot=TRUE, rankplot=FALSE,
                             pval=0.05,
                             ...) {
 
@@ -61,12 +63,16 @@ multinmatoexcel <- function(nma, ume=NULL,
   }
   checkmate::reportAssertions(argcheck)
 
+  if (!is.null(scalesd) & eform==TRUE) {
+    warning("Both scalesd and eform=TRUE would not typically be specified")
+  }
+
 
   # --- 2. SETUP & STYLING ---
 
   # Create directory
-  if (!dir.exists("Results")) {
-    dir.create("Results", showWarnings = FALSE)
+  if (!dir.exists(out.folder)) {
+    dir.create(out.folder, showWarnings = FALSE)
   }
 
   # Create workbook
@@ -155,8 +161,8 @@ multinmatoexcel <- function(nma, ume=NULL,
     size_col <- NULL
   }
 
-  # Check for class variable
-  class_present <- ".trtclass" %in% names(net_dat)
+  # Check for class effects - Note that common class effects is same as treatment model
+  class_present <- (".trtclass" %in% names(net_dat)) && (nma$class_effects=="exchangeable")
 
   # Define the core grouping variables as quosures (expressions)
   # Start with 'treat'
@@ -200,20 +206,21 @@ multinmatoexcel <- function(nma, ume=NULL,
   # ----------------------------------------------------------------------
   # 5C. CALCULATE CLASS COUNTS (If class variable is present)
   # ----------------------------------------------------------------------
-  # if (class_present) {
-  #   # Sum participant data grouped by class
-  #   class_counts <- trt_counts %>%
-  #     dplyr::filter(!is.na(class)) %>% # Only include treatments with a class
-  #     dplyr::group_by(class) %>%
-  #     dplyr::summarise(
-  #       N_Studies_Class = dplyr::n_distinct(.study),
-  #       Total_Participants_Class = sum(Total_Participants, na.rm=TRUE),
-  #       .groups = 'drop'
-  #     )
-  #   # NOTE: N_Studies is calculated based on treatments within a class, so it's a proxy
-  #   # for the number of studies contributing to that class node.
-  # }
-  #
+  if (class_present) {
+    # Sum participant data grouped by class
+    class_counts <- trt_counts %>%
+      dplyr::filter(!is.na(Class)) %>% # Only include treatments with a class
+      dplyr::group_by(Class) %>%
+      dplyr::summarise(
+        N_Studies_Class = sum(N_Studies, na.rm=TRUE),
+        Total_Participants_Class = sum(Total_Participants, na.rm=TRUE),
+        .groups = 'drop'
+      )
+
+    trt_counts <- dplyr::left_join(trt_counts, class_counts, by = "Class") %>%
+      dplyr::arrange(Class)
+  }
+
 
   # ----------------------------------------------------------------------
   # 5D. COUNT PAIRWISE COMPARISONS (Treatments and Classes)
@@ -274,7 +281,9 @@ multinmatoexcel <- function(nma, ume=NULL,
     openxlsx::writeDataTable(wb, sheet="Data", nma$network$agd_arm, tableStyle = "TableStyleLight9", startRow = row)
     row <- row + 3 + nrow(nma$network$agd_arm)
   }
-  openxlsx::writeDataTable(wb, sheet="Data", nma$network$agd_contrast, tableStyle = "TableStyleLight9", startRow = row)
+  if (!is.null(nma$network$agd_contrast)) {
+    openxlsx::writeDataTable(wb, sheet="Data", nma$network$agd_contrast, tableStyle = "TableStyleLight9", startRow = row)
+  }
   message("Written input data")
 
 
@@ -368,6 +377,22 @@ multinmatoexcel <- function(nma, ume=NULL,
   openxlsx::addWorksheet(wb, sheetName="Model fit")
   openxlsx::writeData(wb, sheet="Model fit", modfit)
   apply_std_style(wb, "Model fit", modfit)
+
+  if (devplot==TRUE) {
+
+    if(!is.null(ume)) {
+      g_dev <- plot(fit_stats, fit_stats_ume, show_uncertainty = FALSE, ...) +
+        ggplot2::theme_bw() +
+        ggplot2::xlab("NMA") +
+        ggplot2::ylab("UME")
+
+      print(g_dev)
+      openxlsx::insertPlot(wb, sheet="Model fit", startRow=5, startCol=1, width=8, height=6, dpi=300)
+    } else {
+      warning("Can only plot devplot if ume model is provided")
+    }
+  }
+
   message("Written model fit statistics")
 
 
@@ -378,75 +403,140 @@ multinmatoexcel <- function(nma, ume=NULL,
     stop(paste0("trt_ref '", trt_ref, "' is not a treatment within nma$network$treatments"))
   }
 
-  # Get Relative Effects (treatment-level)
+  # 9.1. TREATMENT-LEVEL EFFECTS
   relefs_obj <- multinma::relative_effects(nma, trt_ref=trt_ref)
   relefs <- relefs_obj$summary
-
-  # Handle Transformations (SMD or Log scales)
-  # multinma output is usually linear predictor.
-  # If model.scale is log, we assume output is log(OR) and needs exp.
-  # If scalesd is provided, we assume output is SMD and needs multiplication.
-
   re_df <- relefs %>% dplyr::as_tibble()
 
+  # Scaling/transformation
   wbstr <- "Effect sizes reported on analysis scale"
   if (!is.null(scalesd)) {
     cols_to_scale <- c("mean", "sd", "2.5%", "25%", "50%", "75%", "97.5%")
     re_df[cols_to_scale] <- re_df[cols_to_scale] * scalesd
-
-    message(paste0("Effects scaled by SD: ", scalesd))
     wbstr <- paste("Analysis effect sizes rescaled by SD:", scalesd)
-
-  } else if (!is.null(model.scale) && model.scale == "log") {
+  } else if (eform==TRUE) {
     cols_to_exp <- c("mean", "2.5%", "25%", "50%", "75%", "97.5%")
     re_df[cols_to_exp] <- exp(re_df[cols_to_exp])
-    # SD on natural scale is approximate or not applicable directly
-
-    message("Effects exponentiated (Log to Natural scale)")
     wbstr <- "Effect sizes reported on natural scale"
   }
 
-  # Format Output
   re_out <- re_df %>%
-    dplyr::mutate(
-      #NeatOutput = neatcri_val(`50%`, `2.5%`, `97.5%`, decimals)
-      NeatOutput = neatcri2(., decimals=decimals)
-    ) %>%
+    dplyr::mutate(NeatOutput = neatcri2(., decimals=decimals)) %>%
     dplyr::select(Parameter = parameter, Treatment = .trtb, Median = `50%`, Lower = `2.5%`, Upper = `97.5%`, NeatOutput)
 
+  # Write Treatment Results
   openxlsx::addWorksheet(wb, sheetName="Effect Size vs Reference")
 
-
-  openxlsx::writeData(wb, "Effect Size vs Reference", wbstr, startRow=1, startCol=1)
-  title_style <- openxlsx::createStyle(fontSize = 14, textDecoration = "bold", fontName = "Arial")
+  refstr <- paste("Effect sizes versus", trt_ref)
+  openxlsx::writeData(wb, "Effect Size vs Reference", refstr, startRow=1, startCol=1)
   openxlsx::addStyle(wb, "Effect Size vs Reference", title_style, rows=1, cols=1)
 
-  openxlsx::writeData(wb, sheet="Effect Size vs Reference", re_out, startRow=3)
-  apply_std_style(wb, "Effect Size vs Reference", re_out, row=3)
+  openxlsx::writeData(wb, "Effect Size vs Reference", wbstr, startRow=2, startCol=1)
+  openxlsx::addStyle(wb, "Effect Size vs Reference", title_style, rows=1, cols=1)
 
-  # Forest Plot
+  openxlsx::writeData(wb, sheet="Effect Size vs Reference", re_out, startRow=4)
+  apply_std_style(wb, "Effect Size vs Reference", re_out, row=4)
+
+  # Insert Treatment Forest Plot (Resized)
   if (forestplot == TRUE) {
-    tryCatch({
-      # Use multinma's plot method on the stored object
-      # Note: We plot the object *before* manual scaling for the graph to ensure consistency,
-      # or we rely on ggplot modification.
-      p <- plot(relefs_obj, ref_line = 0, .width=c(0.025, 0.975), ...) +
-        ggplot2::theme_bw() +
-        ggplot2::labs(title = paste0("Relative Effects vs ", trt_ref))
+    p_trt <- plot(relefs_obj, ref_line = 0, .width=c(0.025, 0.975)) +
+      ggplot2::theme_bw() +
+      ggplot2::labs(title = paste0("Treatment Effects vs ", trt_ref))
 
-      print(p) # Print to active device to capture
-      openxlsx::insertPlot(wb, sheet="Effect Size vs Reference", startRow=2, startCol=8, width=8, height=6, dpi=300)
-    }, error = function(e) warning("Forest plot generation failed: ", e$message))
+    print(p_trt)
+    # Dynamic height
+    trt_plot_height <- max(2, (nrow(re_out) * 0.20) + 0.8)
+    openxlsx::insertPlot(wb, sheet="Effect Size vs Reference", startRow=2, startCol=8, width=8, height=trt_plot_height, dpi=300)
   }
 
+  # 9.2. CLASS-LEVEL EFFECTS (If present)
+  if (class_present==TRUE) {
 
+    # Find class of the reference treatment
+    ref_class <- trt_counts$Class[which(trt_counts$Treatment %in% trt_ref)]
 
-  # NEED TO ADD CLASS-LEVEL TREATMENT EFFECTS
+    if (ref_class==nma$network$classes[1]) {
+
+      re_class_out <- as_tibble(summary(nma, pars = "class_mean")) %>%
+        # Extract class details
+        mutate(Class = factor(gsub(".*\\[(.+)\\]", "\\1", parameter),
+                              levels = levels(nma$network$classes))) %>%
+        mutate(NeatOutput=neatcri2(., decimals=2)) %>%
+        dplyr::select(Parameter=parameter, Class, Median=`50%`, Lower=`2.5%`, Upper=`97.5%`, NeatOutput)
+
+    } else {
+      # 1. Extract MCMC samples for class means
+      # This returns a matrix where rows = iterations, cols = classes
+      class_samps <- as.matrix(nma, pars = "class_mean")
+
+      # Add zero column for network reference class
+      zmat <- matrix(0, ncol=1, nrow=nrow(class_samps))
+      colnames(zmat) <- paste0("class_mean[", nma$network$classes[1], "]")
+      class_samps <- cbind(zmat, class_samps)
+
+      # 2. Identify the column corresponding to the Reference Class
+      # The column names usually look like "class_mean[ClassName]"
+      ref_class <- trt_counts$Class[which(trt_counts$Treatment %in% trt_ref)]
+      ref_col_name <- paste0("class_mean[", ref_class, "]")
+
+      if (!ref_col_name %in% colnames(class_samps)) {
+        stop(paste("Reference class column", ref_col_name, "not found in MCMC samples."))
+      }
+
+      # 3. Calculate Relative Effects (Iteration-by-Iteration)
+      # We subtract the reference class column from ALL columns for every iteration.
+      # This preserves the correlation structure.
+      diff_samps <- sweep(class_samps, 1, class_samps[, ref_col_name], "-")
+
+      # 4. Summarize the new relative samples
+      # Apply summary to every column (class)
+      class_res_matrix <- t(apply(diff_samps, 2, get_sum))
+
+      # Convert to Tibble and Format
+      re_class_out <- as_tibble(class_res_matrix, rownames = "parameter") %>%
+        mutate(
+          Class = gsub(".*\\[(.+)\\]", "\\1", parameter),
+          level = "class"
+        ) %>%
+        mutate(NeatOutput=neatcri2(., decimals=2)) %>%
+        dplyr::select(Parameter=parameter, Class, Median=`50%`, Lower=`2.5%`, Upper=`97.5%`, NeatOutput)
+    }
+
+    # 5. Write to Excel
+    start_row_class <- nrow(re_out) + 8
+    openxlsx::writeData(wb, "Effect Size vs Reference", "Class-level Relative Effects", startRow = start_row_class - 1)
+    openxlsx::addStyle(wb, "Effect Size vs Reference", title_style, rows = start_row_class - 1, cols = 1)
+
+    openxlsx::writeData(wb, "Effect Size vs Reference", re_class_out, startRow = start_row_class)
+    apply_std_style(wb, "Effect Size vs Reference", re_class_out, row = start_row_class)
+
+    # 6. Insert Class Forest Plot
+    if (forestplot == TRUE) {
+      # Generate manual plot from summary data
+      p_class <- ggplot2::ggplot(re_class_out, ggplot2::aes(y = Class, x = Median)) +
+        ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+        ggplot2::geom_pointrange(ggplot2::aes(xmin = Lower, xmax = Upper)) +
+        ggplot2::theme_bw() +
+        ggplot2::labs(
+          title = paste("Class Effects relative to", ref_class),
+          x = "Relative Effect",
+          y = "Class"
+        )
+
+      print(p_class)
+      # Dynamic height
+      class_plot_height <- max(2, (nrow(re_class_out) * 0.20) + 0.8)
+      openxlsx::insertPlot(wb, sheet="Effect Size vs Reference", startRow = start_row_class, startCol = 8, width=8, height=class_plot_height, dpi=300)
+    }
+
+    message("Written relative effects vs reference class")
+  }
 
 
   # --- 10. RANKS ---
   openxlsx::addWorksheet(wb, "Ranks")
 
+  # 10.1 Treatment Ranks
   rks <- multinma::posterior_ranks(nma, lower_better = lower_better)
   rk_sum <- rks$summary
 
@@ -459,25 +549,101 @@ multinmatoexcel <- function(nma, ume=NULL,
                   mean=round(mean, decimals)) %>%
     dplyr::select(Treatment = .trt, MeanRank = mean, MedianRank = `50%`, Lower = `2.5%`, Upper = `97.5%`, NeatOutput)
 
-  openxlsx::writeData(wb, "Ranks", rk_out)
-  apply_std_style(wb, "Ranks", rk_out)
+  openxlsx::writeData(wb, "Ranks", "Treatment Rankings", startRow = 1)
+  openxlsx::addStyle(wb, "Ranks", title_style, rows=1, cols=1)
 
-  # Plot Cumulative Ranks
+  openxlsx::writeData(wb, "Ranks", rk_out, startRow = 2)
+  apply_std_style(wb, "Ranks", rk_out, row=2)
+
+  # Plot Cumulative Ranks (Treatments)
   if (rankplot==TRUE) {
     g_rank <- plot(rk_probs) +
       ggplot2::theme_bw() +
-      ggplot2::theme(legend.position = "bottom")
+      ggplot2::theme(legend.position = "bottom") +
+      ggplot2::labs(title = "Cumulative Rank Probabilities (Treatments)")
+
+    suppressMessages(
+      g_rank <- g_rank + ggplot2::scale_x_continuous()
+    )
 
     print(g_rank)
     openxlsx::insertPlot(wb, sheet="Ranks", startRow=2, startCol=8, width=8, height=6, dpi=300)
   }
 
+  # 10.2 Class Ranks (Updated)
+  if (class_present) {
 
-  # NEED TO DO THE SAME FOR CLASS RANKINGS
+    # Create matrix of class effects
+    class_sum <- as.matrix(nma, pars = "class_mean")
+
+    zmat <- matrix(0, ncol=1, nrow=nrow(class_sum))
+    colnames(zmat) <- paste0("class_mean[", nma$network$classes[1], "]")
+    class_sum <- cbind(zmat, class_sum)
+
+    # Calculate ranks at each iteration
+    if (lower_better==FALSE) {
+      class_rks <- t(apply(-class_sum, 1, rank))
+    } else if (lower_better==TRUE) {
+      class_rks <- t(apply(class_sum, 1, rank))
+    }
 
 
+    # Calculate Ranks
+    class_rk_sum <- summary_multinma_matrix(class_rks)
 
-  # --- 11. ALL RELATIVE EFFECTS (CONSISTENCY VS UME) ---
+    # Calculate rank probs for class
+    class_rk_probs <- apply(class_rks, 2, function(x) table(factor(x, levels = 1:ncol(class_rks))) / nrow(class_rks))
+    colnames(class_rk_probs) <- gsub("(class_mean\\[)(.+)(\\])", "\\2", colnames(class_rk_probs))
+    class_rk_probs <- as.data.frame(class_rk_probs)
+
+    class_rk_probs <- class_rk_probs %>%
+      mutate(Rank = row_number()) %>%
+      tidyr::pivot_longer(
+        cols = -Rank,
+        names_to = "Class",
+        values_to = "Probability"
+      )
+
+    # Format Table
+    class_rk_out <- class_rk_sum %>%
+      dplyr::mutate(NeatOutput = neatcri2(., decimals=decimals),
+                    Class=gsub("(class_mean\\[)(.+)(\\])", "\\2", parameter)) %>%
+      dplyr::select(Class, MeanRank = mean, MedianRank = `50%`, Lower = `2.5%`, Upper = `97.5%`, NeatOutput)
+
+    # Determine Row to write to (leave a gap after treatment table)
+    start_row_class <- nrow(rk_out) + 5
+
+    openxlsx::writeData(wb, "Ranks", "Class Rankings", startRow = start_row_class - 1)
+    openxlsx::addStyle(wb, "Ranks", title_style, rows=start_row_class - 1, cols=1)
+
+    openxlsx::writeData(wb, "Ranks", class_rk_out, startRow = start_row_class)
+    apply_std_style(wb, "Ranks", class_rk_out, row=start_row_class)
+
+    # Plot Cumulative Ranks (Classes)
+    if (rankplot == TRUE) {
+
+      g_rank_class <- ggplot2::ggplot(class_rk_probs, ggplot2::aes(x = Rank, y = Probability)) +
+        ggplot2::geom_line() +
+        ggplot2::facet_wrap(~ Class) +
+        ggplot2::theme_bw() +
+        ggplot2::labs(title = "Cumulative Rank Probabilities (Classes)",
+                      x = "Rank",
+                      y = "Probability")
+
+      print(g_rank_class)
+      # Place plot below the treatment plot.
+      # Treatment plot is at row 2, height 6 inches (~30 rows).
+      # A safe row estimation for the next plot is around row 35.
+      openxlsx::insertPlot(wb, sheet="Ranks", startRow=start_row_class, startCol=8, width=8, height=6, dpi=300)
+    }
+
+    message("Written class rankings")
+  }
+
+
+  #######################################################################
+  # --- 11. ALL TREATMENT-LEVEL RELATIVE EFFECTS (CONSISTENCY VS UME) ---
+  #######################################################################
 
   # Get all contrasts from NMA
   all_re <- multinma::relative_effects(nma, all_contrasts = TRUE)
@@ -527,7 +693,7 @@ multinmatoexcel <- function(nma, ume=NULL,
     full_res[cols] <- full_res[cols] * scalesd
 
     message(paste("Effects between all treatment comparisons rescaled by:", scalesd))
-  } else if (!is.null(model.scale) && model.scale == "log") {
+  } else if (eform==TRUE) {
     cols <- c("Median_NMA", "Low_NMA", "High_NMA", "Median_UME", "Low_UME", "High_UME")
     cols <- intersect(cols, names(full_res))
     full_res[cols] <- exp(full_res[cols])
@@ -548,25 +714,328 @@ multinmatoexcel <- function(nma, ume=NULL,
     full_res <- full_res %>% dplyr::select(-comp_id, -SD_NMA)
   }
 
-  # Write
+
+  # LEAGUE TABLE WITH NMA (Bottom-Left) AND UME (Top-Right)
+
+  # 1. Get unique treatments in the order they appear in the network
+  trts <- as.character(nma$network$treatments)
+  n_trts <- length(trts)
+
+  # 2. Initialize an empty square matrix (plus space for labels)
+  # We make it (n_trts + 1) x (n_trts + 1) to accommodate the labels
+  lt_matrix <- matrix("", nrow = n_trts + 1, ncol = n_trts + 1)
+
+  # 3. Add Labels to the 1st row and 1st column
+  lt_matrix[1, 2:(n_trts+1)] <- trts
+  lt_matrix[2:(n_trts+1), 1] <- trts
+  lt_matrix[1, 1] <- "Ref: Row vs Col"
+
+  # 4. Fill the matrix
+  for (i in 1:n_trts) {
+    for (j in 1:n_trts) {
+      if (i == j) {
+        lt_matrix[i+1, j+1] <- "--" # Diagonal
+        next
+      }
+
+      # Identify the comparison
+      t_row <- trts[i]
+      t_col <- trts[j]
+
+      if (i > j) {
+        # LOWER TRIANGLE: NMA Results (Row vs Column)
+        # Find result in full_res (Treat2 is .trtb/Row, Treat1 is .trta/Col)
+        res <- full_res %>% dplyr::filter((Treat2 == t_row & Treat1 == t_col))
+
+        if (nrow(res) > 0) {
+          lt_matrix[i+1, j+1] <- res$NMA_Result[1]
+        } else {
+          # Try inverted contrast
+          res_inv <- full_res %>% dplyr::filter((Treat1 == t_row & Treat2 == t_col))
+          if (nrow(res_inv) > 0) {
+            # Need to invert the numeric values before formatting for the neatcri
+            # This assumes neatcri2 is available to handle a temporary inverted df
+            inv_df <- res_inv %>% mutate(
+              m = if(eform==TRUE) 1/Median_NMA else -Median_NMA,
+              l = if(eform==TRUE) 1/High_NMA else -High_NMA,
+              h = if(eform==TRUE) 1/Low_NMA else -Low_NMA
+            )
+            lt_matrix[i+1, j+1] <- neatcri2(inv_df, colnams = c("m", "l", "h"), decimals=decimals)
+          }
+        }
+
+      } else {
+        # UPPER TRIANGLE: UME/Direct Results (Row vs Column)
+        if (!is.null(ume)) {
+          res <- full_res %>% dplyr::filter((Treat2 == t_row & Treat1 == t_col))
+
+          if (nrow(res) > 0 && !is.na(res$Median_UME[1])) {
+            lt_matrix[i+1, j+1] <- res$Direct_Result[1]
+          } else {
+            # Try inverted contrast
+            res_inv <- full_res %>% dplyr::filter((Treat1 == t_row & Treat2 == t_col))
+            if (nrow(res_inv) > 0 && !is.na(res_inv$Median_UME[1])) {
+              # inv_df <- res_inv %>% mutate(
+              #   m = if(eform==TRUE) 1/Median_UME else -Median_UME,
+              #   l = if(eform==TRUE) 1/High_UME else -High_UME,
+              #   h = if(eform==TRUE) 1/Low_UME else -Low_UME
+              # )
+              # lt_matrix[i+1, j+1] <- neatcri2(inv_df, colnams = c("m", "l", "h"), decimals=decimals)
+              lt_matrix[i+1, j+1] <- neatcri2(res_inv, colnams = c("Median_UME", "Low_UME", "High_UME"), decimals=decimals)
+            } else {
+              lt_matrix[i+1, j+1] <- ""
+            }
+          }
+        }
+      }
+    }
+  }
+
+  # --- WRITE TO EXCEL ---
   openxlsx::addWorksheet(wb, "Treatment Direct Effects")
   openxlsx::writeData(wb, "Treatment Direct Effects", full_res)
   apply_std_style(wb, "Treatment Direct Effects", full_res)
 
-  # Conditional Formatting for P-Values
-  if (!is.null(ume)) {
-    pval_col <- which(names(full_res) == "P_Value")
-    rows_highlight <- which(full_res$P_Value < pval) + 1 # +1 for header
-    if(length(rows_highlight) > 0) {
-      openxlsx::addStyle(wb, "Treatment Direct Effects", style_highlight, rows = rows_highlight, cols = pval_col)
+  # Write League Table
+  # Positioned to the right of the main results table
+  start_col_league <- ncol(full_res) + 3
+  league_table_df <- as.data.frame(lt_matrix)
+
+  # Write a descriptive title above the league table
+  openxlsx::writeData(wb, "Treatment Direct Effects", "League Table: Lower=NMA (Row vs Col, Green), Upper=Direct (Col vs Row, Grey)",
+                      startCol = start_col_league, startRow = 1)
+
+  # Write the matrix without default data frame headers
+  openxlsx::writeData(wb, "Treatment Direct Effects", league_table_df,
+                      startCol = start_col_league, startRow = 2, colNames = FALSE)
+
+  # ----------------------------------------------------------------------
+  # STYLING: COLUMN WIDTHS AND TREATMENT LABELS
+  # ----------------------------------------------------------------------
+
+  # Define specific coordinates
+  n_trts <- length(trts)
+  league_rows <- 2:(n_trts + 2) # Includes header row
+  league_cols <- start_col_league:(start_col_league + n_trts)
+
+  # 1. Increase column widths for readability
+  # We set a fixed width (e.g., 20) or use a multiplier based on decimal precision
+  # Column 1 (labels) can be slightly narrower or wider depending on trt name length
+  openxlsx::setColWidths(wb, "Treatment Direct Effects",
+                         cols = league_cols,
+                         widths = 16)
+
+  # 2. Create and Apply Specific Styles
+  style_nma_bg <- openxlsx::createStyle(fgFill = "#EBF1DE", border = "TopBottomLeftRight", halign = "center", valign = "center")
+  style_ume_bg <- openxlsx::createStyle(fgFill = "#F2F2F2", border = "TopBottomLeftRight", halign = "center", valign = "center")
+  style_diag   <- openxlsx::createStyle(fgFill = "#D9D9D9", border = "TopBottomLeftRight", halign = "center", valign = "center")
+
+  # 3. Apply Triangle and Diagonal Styling
+  for (i in 1:n_trts) {
+    for (j in 1:n_trts) {
+      target_row <- i + 2 # Offset for title row
+      target_col <- start_col_league + j # Offset for label column
+
+      if (i == j) {
+        # Diagonal cells
+        openxlsx::addStyle(wb, "Treatment Direct Effects", style_diag, rows = target_row, cols = target_col)
+      } else if (i > j) {
+        # Lower Triangle (NMA)
+        openxlsx::addStyle(wb, "Treatment Direct Effects", style_nma_bg, rows = target_row, cols = target_col)
+      } else {
+        # Upper Triangle (UME/Direct)
+        openxlsx::addStyle(wb, "Treatment Direct Effects", style_ume_bg, rows = target_row, cols = target_col)
+      }
     }
   }
 
-  message("Written all direct treatment effects")
+  # 4. Format Treatment Names (Row 1 and Col 1 of the League Table)
+  # Using the standard header style defined at the top of the function
+  openxlsx::addStyle(wb, "Treatment Direct Effects", style_header,
+                     rows = 2, cols = league_cols, gridExpand = TRUE)
+  openxlsx::addStyle(wb, "Treatment Direct Effects", style_header,
+                     rows = league_rows, cols = start_col_league, gridExpand = TRUE)
+
+  # Ensure the "Ref" cell at the top-left of the table is also styled
+  openxlsx::addStyle(wb, "Treatment Direct Effects", style_header, rows = 2, cols = start_col_league)
+
+  message("Written all direct treatment effects with league table")
 
 
-  # DO SAME FOR CLASS LEVEL EFFECTS
+  #######################################################################
+    # --- 12. ALL Class-LEVEL RELATIVE EFFECTS (CONSISTENCY ONLY) ---
+  #######################################################################
 
+  if (class_present) {
+
+    # Get all contrast pairs
+    class_nams <- gsub("(class_mean\\[)(.+)(\\])", "\\2", colnames(class_sum))
+    colnames(class_sum) <- class_nams
+    contrast_pairs <- combn(class_nams, 2, simplify = FALSE)
+
+    # Iterate through pairs and calculate the relative effect samples
+    # We calculate: Class B - Class A
+    all_contrasts_list <- lapply(contrast_pairs, function(pair) {
+      trta <- pair[1] # Reference
+      trtb <- pair[2] # Target
+
+      # Calculate iteration-by-iteration difference
+      diff_samples <- class_sum[, trtb] - class_sum[, trta]
+
+      # Summarize the posterior samples
+      # (Assumes get_sum or a similar summary function is available)
+      res_class <- data.frame(
+        .trta = trta,
+        .trtb = trtb,
+        mean = mean(diff_samples),
+        sd = sd(diff_samples),
+        `2.5%` = quantile(diff_samples, 0.025),
+        `50%` = quantile(diff_samples, 0.5),
+        `97.5%` = quantile(diff_samples, 0.975),
+        check.names = FALSE
+      )
+      return(res_class)
+    })
+
+
+    # Combine into a single data frame
+    full_res_class <- do.call(rbind, all_contrasts_list) %>%
+      as_tibble() %>%
+      dplyr::select(Class1=.trta, Class2=.trtb, Median_NMA=`50%`, Low_NMA=`2.5%`, High_NMA=`97.5%`)
+
+    # Clean up columns and Scale
+    if (!is.null(scalesd)) {
+      cols <- c("Median_NMA", "Low_NMA", "High_NMA")
+      cols <- intersect(cols, names(full_res_class))
+      full_res_class[cols] <- full_res_class[cols] * scalesd
+
+      message(paste("Effects between all treatment comparisons rescaled by:", scalesd))
+    } else if (eform==TRUE) {
+      cols <- c("Median_NMA", "Low_NMA", "High_NMA")
+      cols <- intersect(cols, names(full_res_class))
+      full_res_class[cols] <- exp(full_res_class[cols])
+
+      message("Effects between all treatment comparisons transformed from log to natural scale")
+    }
+
+    # Create Neat Outputs
+    full_res_class$NMA_Result <- neatcri2(full_res_class, colnams = c("Median_NMA", "Low_NMA", "High_NMA"), decimals)
+
+
+    # CLASS-LEVEL LEAGUE TABLE WITH NMA (Bottom-Left)
+
+    n_class <- length(class_nams)
+
+    # Initialize an empty square matrix (plus space for labels)
+    lt_matrix_class <- matrix("", nrow = n_class + 1, ncol = n_class + 1)
+
+    # Add Labels to the 1st row and 1st column
+    lt_matrix_class[1, 2:(n_class+1)] <- class_nams
+    lt_matrix_class[2:(n_class+1), 1] <- class_nams
+    lt_matrix_class[1, 1] <- "Ref: Row vs Col"
+
+    # Fill the matrix
+    for (i in 1:n_class) {
+      for (j in 1:n_class) {
+        if (i == j) {
+          lt_matrix_class[i+1, j+1] <- "--" # Diagonal
+          next
+        }
+
+        # Identify the comparison
+        t_row <- class_nams[i]
+        t_col <- class_nams[j]
+
+        if (i > j) {
+          # LOWER TRIANGLE: NMA Results (Row vs Column)
+          # Find result in full_res_class
+          res <- full_res_class %>% dplyr::filter((Class2 == t_row & Class1 == t_col))
+
+          if (nrow(res) > 0) {
+            lt_matrix_class[i+1, j+1] <- res$NMA_Result[1]
+          } else {
+            # Try inverted contrast
+            res_inv <- full_res_class %>% dplyr::filter((Class1 == t_row & Class2 == t_col))
+            if (nrow(res_inv) > 0) {
+              # Need to invert the numeric values before formatting for the neatcri
+              # This assumes neatcri2 is available to handle a temporary inverted df
+              inv_df <- res_inv %>% mutate(
+                m = if(eform==TRUE) 1/Median_NMA else -Median_NMA,
+                l = if(eform==TRUE) 1/High_NMA else -High_NMA,
+                h = if(eform==TRUE) 1/Low_NMA else -Low_NMA
+              )
+              lt_matrix_class[i+1, j+1] <- neatcri2(inv_df, colnams = c("m", "l", "h"), decimals=decimals)
+            }
+          }
+
+        }
+      }
+    }
+
+    # --- WRITE TO EXCEL ---
+    openxlsx::addWorksheet(wb, "Class Direct Effects")
+    openxlsx::writeData(wb, "Class Direct Effects", full_res_class)
+    apply_std_style(wb, "Class Direct Effects", full_res_class)
+
+    # Write League Table
+    # Positioned to the right of the main results table
+    start_col_league <- ncol(full_res_class) + 3
+    league_table_df <- as.data.frame(lt_matrix_class)
+
+    # Write a descriptive title above the league table
+    openxlsx::writeData(wb, "Class Direct Effects", "League Table: Lower=NMA (Row vs Col, Green)",
+                        startCol = start_col_league, startRow = 1)
+
+    # Write the matrix without default data frame headers
+    openxlsx::writeData(wb, "Class Direct Effects", league_table_df,
+                        startCol = start_col_league, startRow = 2, colNames = FALSE)
+
+    # ----------------------------------------------------------------------
+    # STYLING: COLUMN WIDTHS AND TREATMENT LABELS
+    # ----------------------------------------------------------------------
+
+    # Define specific coordinates
+    league_rows <- 2:(n_class + 2) # Includes header row
+    league_cols <- start_col_league:(start_col_league + n_class)
+
+    # 1. Increase column widths for readability
+    # We set a fixed width (e.g., 20) or use a multiplier based on decimal precision
+    # Column 1 (labels) can be slightly narrower or wider depending on trt name length
+    openxlsx::setColWidths(wb, "Class Direct Effects",
+                           cols = league_cols,
+                           widths = 16)
+
+    # Apply Triangle and Diagonal Styling
+    for (i in 1:n_class) {
+      for (j in 1:n_class) {
+        target_row <- i + 2 # Offset for title row
+        target_col <- start_col_league + j # Offset for label column
+
+        if (i == j) {
+          # Diagonal cells
+          openxlsx::addStyle(wb, "Class Direct Effects", style_diag, rows = target_row, cols = target_col)
+        } else if (i > j) {
+          # Lower Triangle (NMA)
+          openxlsx::addStyle(wb, "Class Direct Effects", style_nma_bg, rows = target_row, cols = target_col)
+        } else {
+          # Upper Triangle (UME/Direct)
+          openxlsx::addStyle(wb, "Class Direct Effects", style_ume_bg, rows = target_row, cols = target_col)
+        }
+      }
+    }
+
+    # Format Treatment Names (Row 1 and Col 1 of the League Table)
+    # Using the standard header style defined at the top of the function
+    openxlsx::addStyle(wb, "Class Direct Effects", style_header,
+                       rows = 2, cols = league_cols, gridExpand = TRUE)
+    openxlsx::addStyle(wb, "Class Direct Effects", style_header,
+                       rows = league_rows, cols = start_col_league, gridExpand = TRUE)
+
+    # Ensure the "Ref" cell at the top-left of the table is also styled
+    openxlsx::addStyle(wb, "Class Direct Effects", style_header, rows = 2, cols = start_col_league)
+
+    message("Written all direct class effects with league table")
+  }
 
   openxlsx::saveWorkbook(wb=wb, file=writefile, overwrite=TRUE)
 
