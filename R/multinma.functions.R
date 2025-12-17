@@ -8,10 +8,9 @@
 #' @param ume A `multinma` UME model of class `"stan_nma"`. Only needs to be specified
 #' if user wants to add results for the Unrelated Mean Effects model alongside direct
 #' estimates from the NMA.
-#' @param outstr A string representing an outcome name. This is used to
+#' @param outcome A string representing an outcome name. This is used to
 #' label the outputted Excel workbook.
-#' @param out.folder A string representing a folder path location. If the folder specified
-#' in `out.folder` does not exist then a new one will be created.
+#' @param filenam A string representing a file path and name. Must end in `.xlsx`
 #' @param modnam A string representing the name of the model used
 #' @param decimals The number of decimal places to which to report numerical results
 #' @param trt_ref The name of the reference treatment against which the pooled treatment
@@ -37,7 +36,8 @@
 #'
 #' @export
 multinmatoexcel <- function(nma, ume=NULL,
-                            outstr, out.folder="Results",
+                            filenam,
+                            outcome="Outcome",
                             modnam="RE model",
                             decimals=2,
                             eform=NULL, scalesd=NULL,
@@ -67,19 +67,19 @@ multinmatoexcel <- function(nma, ume=NULL,
     warning("Both scalesd and eform=TRUE would not typically be specified")
   }
 
+  if (!grepl("\\.xlsx", filenam)) {
+    stop("`filenam` must be a .xlsx file")
+  }
+
+
 
   # --- 2. SETUP & STYLING ---
 
-  # Create directory
-  if (!dir.exists(out.folder)) {
-    dir.create(out.folder, showWarnings = FALSE)
-  }
-
   # Create workbook
-  writefile <- paste0("Results/", outstr, ".xlsx")
-  path <- "Results/"
+  wb <- openxlsx::createWorkbook(title=outcome)
 
-  wb <- openxlsx::createWorkbook(title=outstr)
+  # Test it can be saved to filenam location
+  suppressWarnings(openxlsx::saveWorkbook(wb=wb, file=filenam, overwrite=TRUE))
 
 
   # Define Styles
@@ -108,7 +108,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   # --- 3. TITLE PAGE ---
   openxlsx::addWorksheet(wb, "Title Page")
   srow <- 4
-  openxlsx::writeData(wb, "Title Page", paste0("Analysis Output: ", outstr), startRow=srow, startCol=1)
+  openxlsx::writeData(wb, "Title Page", paste0("Analysis Output: ", outcome), startRow=srow, startCol=1)
   openxlsx::writeData(wb, "Title Page", paste0("Model: ", modnam), startRow=srow+1, startCol=1)
   openxlsx::writeData(wb, "Title Page", paste0("Date Generated: ", Sys.Date()), startRow=srow+2, startCol=1)
   openxlsx::writeData(wb, "Title Page", paste0("Reference Treatment: ", trt_ref), startRow=srow+3, startCol=1)
@@ -1037,7 +1037,7 @@ multinmatoexcel <- function(nma, ume=NULL,
     message("Written all direct class effects with league table")
   }
 
-  openxlsx::saveWorkbook(wb=wb, file=writefile, overwrite=TRUE)
+  openxlsx::saveWorkbook(wb=wb, file=filenam, overwrite=TRUE)
 
   message("FINISHED!!!!")
 
