@@ -4,7 +4,7 @@
 \alias{recode.trt}
 \title{Returns a data frame of new treatment and class codes with \code{ref} as the reference treatment}
 \usage{
-recode.trt(df, classcode, ref = NULL)
+\method{recode}{trt}(df, classcode, ref = NULL)
 }
 \description{
 Returns a data frame of new treatment and class codes with \code{ref} as the reference treatment
