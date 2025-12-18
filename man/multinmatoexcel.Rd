@@ -7,14 +7,16 @@
 multinmatoexcel(
   nma,
   ume = NULL,
-  outstr,
-  out.folder = "Results",
+  filenam,
+  outcome = "Outcome",
   modnam = "RE model",
   decimals = 2,
   eform = NULL,
   scalesd = NULL,
   trt_ref = nma$network$treatments[1],
   lower_better = TRUE,
+  treatments_to_rank = nma$network$treatments,
+  classes_to_rank = nma$network$classes,
   devplot = TRUE,
   netplot = TRUE,
   forestplot = TRUE,
@@ -30,11 +32,10 @@ multinmatoexcel(
 if user wants to add results for the Unrelated Mean Effects model alongside direct
 estimates from the NMA.}
 
-\item{outstr}{A string representing an outcome name. This is used to
-label the outputted Excel workbook.}
+\item{filenam}{A string representing a file path and name. Must end in \code{.xlsx}}
 
-\item{out.folder}{A string representing a folder path location. If the folder specified
-in \code{out.folder} does not exist then a new one will be created.}
+\item{outcome}{A string representing an outcome name. This is used to
+label the outputted Excel workbook.}
 
 \item{modnam}{A string representing the name of the model used}
 
@@ -52,6 +53,13 @@ effects will be plotted and shown in an \verb{Effect size} worksheet.}
 
 \item{lower_better}{Logical to indicate whether lower scores are ranked as better (\code{TRUE})
 or not (\code{FALSE})}
+
+\item{treatments_to_rank}{A character vector of treatment names (must be a subset of those
+in \code{nma$network$treatments}) to include in rankings. Allows a decision subset treatments in the
+network to be ranked.}
+
+\item{classes_to_rank}{A character vector of class names (must be a subset of those in
+\code{nma$network$treatments}) to include in rankings.}
 
 \item{devplot}{Whether to add a Dev-Dev plot showing the deviance of the UME vs NMA
 model. To allow this, \code{addume} must be set to \code{TRUE} (see requirements for this), and

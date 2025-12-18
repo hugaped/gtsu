@@ -17,6 +17,11 @@
 #' effects will be plotted and shown in an `Effect size` worksheet.
 #' @param lower_better Logical to indicate whether lower scores are ranked as better (`TRUE`)
 #' or not (`FALSE`)
+#' @param treatments_to_rank A character vector of treatment names (must be a subset of those
+#' in `nma$network$treatments`) to include in rankings. Allows a decision subset treatments in the
+#' network to be ranked.
+#' @param classes_to_rank A character vector of class names (must be a subset of those in
+#' `nma$network$treatments`) to include in rankings.
 #' @param devplot Whether to add a Dev-Dev plot showing the deviance of the UME vs NMA
 #' model. To allow this, `addume` must be set to `TRUE` (see requirements for this), and
 #' the `dev` node of both NMA and UME models must have been monitored.
@@ -43,6 +48,8 @@ multinmatoexcel <- function(nma, ume=NULL,
                             eform=NULL, scalesd=NULL,
                             trt_ref=nma$network$treatments[1],
                             lower_better=TRUE,
+                            treatments_to_rank=nma$network$treatments,
+                            classes_to_rank=nma$network$classes,
                             devplot=TRUE, netplot=TRUE, forestplot=TRUE, rankplot=FALSE,
                             pval=0.05,
                             ...) {
@@ -537,17 +544,50 @@ multinmatoexcel <- function(nma, ume=NULL,
   openxlsx::addWorksheet(wb, "Ranks")
 
   # 10.1 Treatment Ranks
-  rks <- multinma::posterior_ranks(nma, lower_better = lower_better)
-  rk_sum <- rks$summary
+  # Create matrix of class effects
+  d <- as.matrix(nma, pars = "d")
 
-  # Rank Probabilities for Plot
-  rk_probs <- multinma::posterior_rank_probs(nma, lower_better = lower_better)
+  zmat <- matrix(0, ncol=1, nrow=nrow(d))
+  colnames(zmat) <- paste0("d[", nma$network$treatments[1], "]")
+  d <- cbind(zmat, d)
 
-  # Formatting Table
-  rk_out <- rk_sum %>%
+  # Select treatments to rank
+  treatments_to_rank <- paste0("class_mean[", treatments_to_rank, "]")
+  if (!all(treatments_to_rank %in% colnames(d))) {
+    stop("treatments_to_rank do not all match treatment names within nma")
+  }
+  d <- d[,treatments_to_rank]
+
+  # Calculate ranks at each iteration
+  if (lower_better==FALSE) {
+    d_rks <- t(apply(-d, 1, rank))
+  } else if (lower_better==TRUE) {
+    d_rks <- t(apply(d, 1, rank))
+  }
+
+
+  # Calculate Ranks
+  d_rk_sum <- summary_multinma_matrix(d_rks)
+
+  # Calculate rank probs
+  d_rk_probs <- apply(d_rks, 2, function(x) table(factor(x, levels = 1:ncol(d_rks))) / nrow(d_rks))
+  colnames(d_rk_probs) <- gsub("(d\\[)(.+)(\\])", "\\2", colnames(d_rk_probs))
+  d_rk_probs <- as.data.frame(d_rk_probs)
+
+  d_rk_probs <- d_rk_probs %>%
+    mutate(Rank = row_number()) %>%
+    tidyr::pivot_longer(
+      cols = -Rank,
+      names_to = "Treatment",
+      values_to = "Probability"
+    )
+
+  # Format Table
+  rk_out <- d_rk_sum %>%
     dplyr::mutate(NeatOutput = neatcri2(., decimals=decimals),
-                  mean=round(mean, decimals)) %>%
-    dplyr::select(Treatment = .trt, MeanRank = mean, MedianRank = `50%`, Lower = `2.5%`, Upper = `97.5%`, NeatOutput)
+                  Class=gsub("(d\\[)(.+)(\\])", "\\2", parameter)) %>%
+    dplyr::select(Treatment, MeanRank = mean, MedianRank = `50%`, Lower = `2.5%`, Upper = `97.5%`, NeatOutput)
+
 
   openxlsx::writeData(wb, "Ranks", "Treatment Rankings", startRow = 1)
   openxlsx::addStyle(wb, "Ranks", title_style, rows=1, cols=1)
@@ -557,20 +597,20 @@ multinmatoexcel <- function(nma, ume=NULL,
 
   # Plot Cumulative Ranks (Treatments)
   if (rankplot==TRUE) {
-    g_rank <- plot(rk_probs) +
+    g_rank <- ggplot2::ggplot(d_rk_probs, ggplot2::aes(x = Rank, y = Probability)) +
+      ggplot2::geom_line() +
+      ggplot2::facet_wrap(~ Treatment) +
       ggplot2::theme_bw() +
-      ggplot2::theme(legend.position = "bottom") +
-      ggplot2::labs(title = "Cumulative Rank Probabilities (Treatments)")
-
-    suppressMessages(
-      g_rank <- g_rank + ggplot2::scale_x_continuous()
-    )
+      ggplot2::labs(title = "Cumulative Rank Probabilities (Treatments)",
+                    x = "Rank",
+                    y = "Probability")
 
     print(g_rank)
     openxlsx::insertPlot(wb, sheet="Ranks", startRow=2, startCol=8, width=8, height=6, dpi=300)
   }
 
-  # 10.2 Class Ranks (Updated)
+
+  # 10.2 Class Ranks
   if (class_present) {
 
     # Create matrix of class effects
@@ -579,12 +619,20 @@ multinmatoexcel <- function(nma, ume=NULL,
     zmat <- matrix(0, ncol=1, nrow=nrow(class_sum))
     colnames(zmat) <- paste0("class_mean[", nma$network$classes[1], "]")
     class_sum <- cbind(zmat, class_sum)
+    class_rank_sum <- class_sum
+
+    # Select classes to rank
+    classes_to_rank <- paste0("class_mean[", classes_to_rank, "]")
+    if (!all(classes_to_rank %in% colnames(class_rank_sum))) {
+      stop("classes_to_rank do not all match class names within nma")
+    }
+    class_rank_sum <- class_rank_sum[,classes_to_rank]
 
     # Calculate ranks at each iteration
     if (lower_better==FALSE) {
-      class_rks <- t(apply(-class_sum, 1, rank))
+      class_rks <- t(apply(-class_rank_sum, 1, rank))
     } else if (lower_better==TRUE) {
-      class_rks <- t(apply(class_sum, 1, rank))
+      class_rks <- t(apply(class_rank_sum, 1, rank))
     }
 
 
