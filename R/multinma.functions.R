@@ -145,11 +145,22 @@ multinmatoexcel <- function(nma, ume=NULL,
 
   # --- 5. INTERVENTION CODES & COUNTS ---
 
+  # Check for class effects - Note that common class effects is same as treatment model
+  class_present <- ("classes" %in% names(nma$network)) && (nma$class_effects=="exchangeable")
+
   # Extract and combine all relevant data types from the network object
   data_list <- list(
     nma$network$agd_arm,
     nma$network$agd_contrast
   )
+
+  # Check columns to keep distinct
+  disvars <- c(".study", ".trt")
+  if (class_present) {
+    disvars <- append(disvars, ".trtclass")
+  }
+  disvars <- rlang::quos(disvars)
+
 
   # Filter out NULL or empty data frames and combine them
   net_dat <- data_list %>%
@@ -157,7 +168,7 @@ multinmatoexcel <- function(nma, ume=NULL,
     purrr::keep(~nrow(.) > 0) %>% # Keep only non-empty data frames
     dplyr::bind_rows() %>%
     # Ensure only distinct study/treatment rows remain for correct counting
-    dplyr::distinct(.study, .trt, .trtclass, .keep_all = TRUE)
+    dplyr::distinct(!!!disvars, .keep_all = TRUE)
 
   # ----------------------------------------------------------------------
   # 5A. COLUMN CHECKS: Participant Size and Class Variable
@@ -171,9 +182,6 @@ multinmatoexcel <- function(nma, ume=NULL,
   } else {
     size_col <- NULL
   }
-
-  # Check for class effects - Note that common class effects is same as treatment model
-  class_present <- (".trtclass" %in% names(net_dat)) && (nma$class_effects=="exchangeable")
 
   # Define the core grouping variables as quosures (expressions)
   # Start with 'treat'
