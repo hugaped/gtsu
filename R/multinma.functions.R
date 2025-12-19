@@ -146,7 +146,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   # --- 5. INTERVENTION CODES & COUNTS ---
 
   # Check for class effects - Note that common class effects is same as treatment model
-  class_present <- ("classes" %in% names(nma$network)) && (nma$class_effects=="exchangeable")
+  class_present <- !is.null(nma$network$classes) && (nma$class_effects=="exchangeable")
 
   # Extract and combine all relevant data types from the network object
   data_list <- list(
