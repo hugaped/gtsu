@@ -564,7 +564,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   d <- cbind(zmat, d)
 
   # Select treatments to rank
-  treatments_to_rank <- paste0("class_mean[", treatments_to_rank, "]")
+  treatments_to_rank <- paste0("d[", treatments_to_rank, "]")
   if (!all(treatments_to_rank %in% colnames(d))) {
     stop("treatments_to_rank do not all match treatment names within nma")
   }
@@ -579,7 +579,8 @@ multinmatoexcel <- function(nma, ume=NULL,
 
 
   # Calculate Ranks
-  d_rk_sum <- summary_multinma_matrix(d_rks)
+  d_rk_sum <- summary_multinma_matrix(d_rks) %>%
+    mutate(Treatment=gsub("(d\\[)(.+)(\\])", "\\2", parameter))
 
   # Calculate rank probs
   d_rk_probs <- apply(d_rks, 2, function(x) table(factor(x, levels = 1:ncol(d_rks))) / nrow(d_rks))
