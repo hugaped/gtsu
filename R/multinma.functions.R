@@ -31,7 +31,7 @@
 #' @param scalesd A number indicating the SD to use for back-transforming SMD to a
 #' particular measurement scale. If left as `NULL` then no transformation will be
 #' performed (i.e. leave as `NULL` if not modelling SMDs)
-#' @param eform Indicates whether treatment effect outputs should be exponentiated or not
+#' @param eform Indicates whether treatment effect outputs should be exponentiated (`TRUE`) or not
 #' (i.e. if model was on log scale).
 #' @param pval Numeric threshold for p-value for direct vs indirect estimates. Note that this is
 #' an approximation as it assumes the posterior is normally distributed, and the data is correlated
@@ -45,7 +45,7 @@ multinmatoexcel <- function(nma, ume=NULL,
                             outcome="Outcome",
                             modnam="RE model",
                             decimals=2,
-                            eform=NULL, scalesd=NULL,
+                            eform=FALSE, scalesd=NULL,
                             trt_ref=nma$network$treatments[1],
                             lower_better=TRUE,
                             treatments_to_rank=nma$network$treatments,
