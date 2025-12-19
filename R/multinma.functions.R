@@ -159,7 +159,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   if (class_present) {
     disvars <- append(disvars, ".trtclass")
   }
-  disvars <- rlang::quos(disvars)
+  disvars <- rlang::syms(disvars)
 
 
   # Filter out NULL or empty data frames and combine them
