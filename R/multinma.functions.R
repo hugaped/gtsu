@@ -37,6 +37,7 @@
 #' an approximation as it assumes the posterior is normally distributed, and the data is correlated
 #' ...i.e. it is not a true indicator of direct vs indirect (nodesplitting would be needed for that).
 #' It should only be used to highlight comparisons for further investigation.
+#' @param addlogo Logical to indicate if GTSU logo should be added
 #' @param ... Arguments to be sent to other `multinma` function
 #'
 #' @export
@@ -52,6 +53,7 @@ multinmatoexcel <- function(nma, ume=NULL,
                             classes_to_rank=nma$network$classes,
                             devplot=TRUE, netplot=TRUE, forestplot=TRUE, rankplot=FALSE,
                             pval=0.05,
+                            addlogo=TRUE,
                             ...) {
 
   # --- 1. CHECKS ---
@@ -124,11 +126,13 @@ multinmatoexcel <- function(nma, ume=NULL,
   openxlsx::addStyle(wb, "Title Page", title_style, rows=srow, cols=1)
 
   # Add logo
-  y <- 0.5
-  x <- 0.5*2999/564 # Underlying plot dimensions
-  #openxlsx::insertImage(wb, sheet="Title Page", startRow=2, startCol=5, width=4, height=2, dpi=300)
-  openxlsx::insertImage(wb, file="man/figures/TSU_24_whitebackground.png",
-                       sheet="Title Page", startRow=1, startCol=1, width=x, height=y, dpi=300)
+  if (addlogo) {
+    y <- 0.5
+    x <- 0.5*2999/564 # Underlying plot dimensions
+    #openxlsx::insertImage(wb, sheet="Title Page", startRow=2, startCol=5, width=4, height=2, dpi=300)
+    openxlsx::insertImage(wb, file="man/figures/TSU_24_whitebackground.png",
+                          sheet="Title Page", startRow=1, startCol=1, width=x, height=y, dpi=300)
+  }
 
 
   # --- 4. NODE SUMMARY ---

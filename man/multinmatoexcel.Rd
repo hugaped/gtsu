@@ -11,7 +11,7 @@ multinmatoexcel(
   outcome = "Outcome",
   modnam = "RE model",
   decimals = 2,
-  eform = NULL,
+  eform = FALSE,
   scalesd = NULL,
   trt_ref = nma$network$treatments[1],
   lower_better = TRUE,
@@ -22,6 +22,7 @@ multinmatoexcel(
   forestplot = TRUE,
   rankplot = FALSE,
   pval = 0.05,
+  addlogo = TRUE,
   ...
 )
 }
@@ -41,7 +42,7 @@ label the outputted Excel workbook.}
 
 \item{decimals}{The number of decimal places to which to report numerical results}
 
-\item{eform}{Indicates whether treatment effect outputs should be exponentiated or not
+\item{eform}{Indicates whether treatment effect outputs should be exponentiated (\code{TRUE}) or not
 (i.e. if model was on log scale).}
 
 \item{scalesd}{A number indicating the SD to use for back-transforming SMD to a
@@ -75,6 +76,8 @@ the \code{dev} node of both NMA and UME models must have been monitored.}
 an approximation as it assumes the posterior is normally distributed, and the data is correlated
 ...i.e. it is not a true indicator of direct vs indirect (nodesplitting would be needed for that).
 It should only be used to highlight comparisons for further investigation.}
+
+\item{addlogo}{Logical to indicate if GTSU logo should be added}
 
 \item{...}{Arguments to be sent to other \code{multinma} function}
 }
