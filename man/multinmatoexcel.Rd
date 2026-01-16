@@ -15,12 +15,13 @@ multinmatoexcel(
   scalesd = NULL,
   trt_ref = nma$network$treatments[1],
   lower_better = TRUE,
-  treatments_to_rank = nma$network$treatments,
-  classes_to_rank = nma$network$classes,
+  treatments_to_rank = levels(nma$network$treatments),
+  classes_to_rank = levels(nma$network$classes),
   devplot = TRUE,
   netplot = TRUE,
   forestplot = TRUE,
   rankplot = FALSE,
+  outputcoda = TRUE,
   pval = 0.05,
   addlogo = TRUE,
   ...
@@ -71,6 +72,10 @@ the \code{dev} node of both NMA and UME models must have been monitored.}
 \item{forestplot}{Whether to plot forest plots in the \verb{Effect size vs reference} worksheet}
 
 \item{rankplot}{Whether to plot cumulative rankograms in the \code{Ranks} worksheet}
+
+\item{outputcoda}{Logical to indicate if coda for treatment and class effects should be added
+as additional worksheets in the output. Note that if \code{eform} or \code{scalesd} are specified then
+this will impact the scale for the coda outputs.}
 
 \item{pval}{Numeric threshold for p-value for direct vs indirect estimates. Note that this is
 an approximation as it assumes the posterior is normally distributed, and the data is correlated
