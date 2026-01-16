@@ -37,6 +37,9 @@
 #' an approximation as it assumes the posterior is normally distributed, and the data is correlated
 #' ...i.e. it is not a true indicator of direct vs indirect (nodesplitting would be needed for that).
 #' It should only be used to highlight comparisons for further investigation.
+#' @param outputcoda Logical to indicate if coda for treatment and class effects should be added
+#' as additional worksheets in the output. Note that if `eform` or `scalesd` are specified then
+#' this will impact the scale for the coda outputs.
 #' @param addlogo Logical to indicate if GTSU logo should be added
 #' @param ... Arguments to be sent to other `multinma` function
 #'
@@ -49,9 +52,10 @@ multinmatoexcel <- function(nma, ume=NULL,
                             eform=FALSE, scalesd=NULL,
                             trt_ref=nma$network$treatments[1],
                             lower_better=TRUE,
-                            treatments_to_rank=nma$network$treatments,
-                            classes_to_rank=nma$network$classes,
+                            treatments_to_rank=levels(nma$network$treatments),
+                            classes_to_rank=levels(nma$network$classes),
                             devplot=TRUE, netplot=TRUE, forestplot=TRUE, rankplot=FALSE,
+                            outputcoda=TRUE,
                             pval=0.05,
                             addlogo=TRUE,
                             ...) {
@@ -88,7 +92,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   wb <- openxlsx::createWorkbook(title=outcome)
 
   # Test it can be saved to filenam location
-  suppressWarnings(openxlsx::saveWorkbook(wb=wb, file=filenam, overwrite=TRUE))
+  #suppressWarnings(openxlsx::saveWorkbook(wb=wb, file=filenam, overwrite=TRUE))
 
 
   # Define Styles
@@ -130,7 +134,8 @@ multinmatoexcel <- function(nma, ume=NULL,
     y <- 0.5
     x <- 0.5*2999/564 # Underlying plot dimensions
     #openxlsx::insertImage(wb, sheet="Title Page", startRow=2, startCol=5, width=4, height=2, dpi=300)
-    openxlsx::insertImage(wb, file="man/figures/TSU_24_whitebackground.png",
+    openxlsx::insertImage(wb,
+                          file=system.file("figures", "TSU_24_whitebackground.png", package = "gtsu"),
                           sheet="Title Page", startRow=1, startCol=1, width=x, height=y, dpi=300)
   }
 
@@ -226,15 +231,26 @@ multinmatoexcel <- function(nma, ume=NULL,
   # 5C. CALCULATE CLASS COUNTS (If class variable is present)
   # ----------------------------------------------------------------------
   if (class_present) {
-    # Sum participant data grouped by class
-    class_counts <- trt_counts %>%
-      dplyr::filter(!is.na(Class)) %>% # Only include treatments with a class
-      dplyr::group_by(Class) %>%
-      dplyr::summarise(
-        N_Studies_Class = sum(N_Studies, na.rm=TRUE),
-        Total_Participants_Class = sum(Total_Participants, na.rm=TRUE),
-        .groups = 'drop'
-      )
+
+    if (!is.null(size_col)) {
+      # Sum participant data grouped by class
+      class_counts <- trt_counts %>%
+        dplyr::filter(!is.na(Class)) %>% # Only include treatments with a class
+        dplyr::group_by(Class) %>%
+        dplyr::summarise(
+          N_Studies_Class = sum(N_Studies, na.rm=TRUE),
+          Total_Participants_Class = sum(Total_Participants, na.rm=TRUE),
+          .groups = 'drop'
+        )
+    } else {
+      class_counts <- trt_counts %>%
+        dplyr::filter(!is.na(Class)) %>% # Only include treatments with a class
+        dplyr::group_by(Class) %>%
+        dplyr::summarise(
+          N_Studies_Class = sum(N_Studies, na.rm=TRUE),
+          .groups = 'drop'
+        )
+    }
 
     trt_counts <- dplyr::left_join(trt_counts, class_counts, by = "Class") %>%
       dplyr::arrange(Class)
@@ -415,6 +431,24 @@ multinmatoexcel <- function(nma, ume=NULL,
   message("Written model fit statistics")
 
 
+  ########## Get matrices of treatment effects for model outputs #########
+
+  # Create matrix of treatment effects
+  treat_sum <- as.matrix(nma, pars = "d")
+
+  zmat <- matrix(0, ncol=1, nrow=nrow(treat_sum))
+  colnames(zmat) <- paste0("d[", levels(nma$network$treatments)[1], "]")
+  treat_sum <- cbind(zmat, treat_sum)
+
+  if (class_present) {
+    # Create matrix of class effects
+    class_sum <- as.matrix(nma, pars = "class_mean")
+
+    zmat_class <- matrix(0, ncol=1, nrow=nrow(class_sum))
+    colnames(zmat_class) <- paste0("class_mean[", levels(nma$network$classes)[1], "]")
+    class_sum <- cbind(zmat_class, class_sum)
+  }
+
 
   # --- 9. EFFECT SIZES VS REFERENCE ---
   # Check if ref exists
@@ -474,7 +508,7 @@ multinmatoexcel <- function(nma, ume=NULL,
     # Find class of the reference treatment
     ref_class <- trt_counts$Class[which(trt_counts$Treatment %in% trt_ref)]
 
-    if (ref_class==nma$network$classes[1]) {
+    if (ref_class==levels(nma$network$classes)[1]) {
 
       re_class_out <- as_tibble(summary(nma, pars = "class_mean")) %>%
         # Extract class details
@@ -489,9 +523,10 @@ multinmatoexcel <- function(nma, ume=NULL,
       class_samps <- as.matrix(nma, pars = "class_mean")
 
       # Add zero column for network reference class
-      zmat <- matrix(0, ncol=1, nrow=nrow(class_samps))
-      colnames(zmat) <- paste0("class_mean[", nma$network$classes[1], "]")
-      class_samps <- cbind(zmat, class_samps)
+      # zmat <- matrix(0, ncol=1, nrow=nrow(class_samps))
+      # colnames(zmat) <- paste0("class_mean[", levels(nma$network$classes)[1], "]")
+      # class_samps <- cbind(zmat_class, class_samps)
+      class_samps <- class_sum
 
       # 2. Identify the column corresponding to the Reference Class
       # The column names usually look like "class_mean[ClassName]"
@@ -556,12 +591,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   openxlsx::addWorksheet(wb, "Ranks")
 
   # 10.1 Treatment Ranks
-  # Create matrix of class effects
-  d <- as.matrix(nma, pars = "d")
-
-  zmat <- matrix(0, ncol=1, nrow=nrow(d))
-  colnames(zmat) <- paste0("d[", nma$network$treatments[1], "]")
-  d <- cbind(zmat, d)
+  d <- treat_sum
 
   # Select treatments to rank
   treatments_to_rank <- paste0("d[", treatments_to_rank, "]")
@@ -626,16 +656,12 @@ multinmatoexcel <- function(nma, ume=NULL,
   # 10.2 Class Ranks
   if (class_present) {
 
-    # Create matrix of class effects
-    class_sum <- as.matrix(nma, pars = "class_mean")
-
-    zmat <- matrix(0, ncol=1, nrow=nrow(class_sum))
-    colnames(zmat) <- paste0("class_mean[", nma$network$classes[1], "]")
-    class_sum <- cbind(zmat, class_sum)
+    # Matrix of class effects
     class_rank_sum <- class_sum
 
     # Select classes to rank
     classes_to_rank <- paste0("class_mean[", classes_to_rank, "]")
+
     if (!all(classes_to_rank %in% colnames(class_rank_sum))) {
       stop("classes_to_rank do not all match class names within nma")
     }
@@ -779,7 +805,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   # LEAGUE TABLE WITH NMA (Bottom-Left) AND UME (Top-Right)
 
   # 1. Get unique treatments in the order they appear in the network
-  trts <- as.character(nma$network$treatments)
+  trts <- as.character(levels(nma$network$treatments))
   n_trts <- length(trts)
 
   # 2. Initialize an empty square matrix (plus space for labels)
@@ -930,8 +956,9 @@ multinmatoexcel <- function(nma, ume=NULL,
   if (class_present) {
 
     # Get all contrast pairs
-    class_nams <- gsub("(class_mean\\[)(.+)(\\])", "\\2", colnames(class_sum))
-    colnames(class_sum) <- class_nams
+    class_sum_rels <- class_sum
+    class_nams <- gsub("(class_mean\\[)(.+)(\\])", "\\2", colnames(class_sum_rels))
+    colnames(class_sum_rels) <- class_nams
     contrast_pairs <- combn(class_nams, 2, simplify = FALSE)
 
     # Iterate through pairs and calculate the relative effect samples
@@ -941,7 +968,7 @@ multinmatoexcel <- function(nma, ume=NULL,
       trtb <- pair[2] # Target
 
       # Calculate iteration-by-iteration difference
-      diff_samples <- class_sum[, trtb] - class_sum[, trta]
+      diff_samples <- class_sum_rels[, trtb] - class_sum_rels[, trta]
 
       # Summarize the posterior samples
       # (Assumes get_sum or a similar summary function is available)
@@ -1096,6 +1123,63 @@ multinmatoexcel <- function(nma, ume=NULL,
     openxlsx::addStyle(wb, "Class Direct Effects", style_header, rows = 2, cols = start_col_league)
 
     message("Written all direct class effects with league table")
+  }
+
+  if (outputcoda) {
+    # --- POSTERIOR SAMPLES OUTPUT ---
+
+    # TREATMENT-LEVEL SAMPLES
+    # Get relative effects vs reference for all treatments
+    trt_relefs_samps <- treat_sum
+
+    # Calculate relative to reference class (as done previously)
+    ref_col_name <- paste0("d[", trt_ref, "]")
+    trt_relefs_samps <- sweep(trt_relefs_samps, 1, trt_relefs_samps[, ref_col_name], "-")
+
+    # Clean column names for Excel
+    colnames(trt_relefs_samps) <- gsub("d\\[(.+)\\]", "\\1", colnames(trt_relefs_samps))
+
+
+    # Apply Scaling and Eform
+    if (!is.null(scalesd)) {
+      trt_relefs_samps <- trt_relefs_samps * scalesd
+    }
+    if (eform == TRUE) {
+      trt_relefs_samps <- exp(trt_relefs_samps)
+    }
+
+    # 11. CLASS-LEVEL SAMPLES (If present)
+    if (class_present == TRUE) {
+      # Extract raw class means
+      raw_class_samps <- class_sum
+
+      # Calculate relative to reference class (as done previously)
+      ref_col_name <- paste0("class_mean[", ref_class, "]")
+      class_diff_samps <- sweep(raw_class_samps, 1, raw_class_samps[, ref_col_name], "-")
+
+      # Clean column names for Excel
+      colnames(class_diff_samps) <- gsub("class_mean\\[(.+)\\]", "\\1", colnames(class_diff_samps))
+
+      # Apply Scaling and Eform
+      if (!is.null(scalesd)) {
+        class_diff_samps <- class_diff_samps * scalesd
+      }
+      if (eform == TRUE) {
+        class_diff_samps <- exp(class_diff_samps)
+      }
+    }
+
+    # --- WRITE TO EXCEL ---
+
+    # Create Treatment Samples Sheet
+    openxlsx::addWorksheet(wb, "CODA (Treatment)")
+    openxlsx::writeData(wb, "CODA (Treatment)", as.data.frame(trt_relefs_samps))
+
+    # Create Class Samples Sheet
+    if (class_present == TRUE) {
+      openxlsx::addWorksheet(wb, "CODA (Class)")
+      openxlsx::writeData(wb, "CODA (Class)", as.data.frame(class_diff_samps))
+    }
   }
 
   openxlsx::saveWorkbook(wb=wb, file=filenam, overwrite=TRUE)
