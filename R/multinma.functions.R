@@ -171,9 +171,10 @@ multinmatoexcel <- function(nma, ume=NULL,
   net_dat <- data_list %>%
     purrr::compact() %>% # Remove NULL elements
     purrr::keep(~nrow(.) > 0) %>% # Keep only non-empty data frames
-    dplyr::bind_rows() %>%
+    dplyr::bind_rows() #%>%
     # Ensure only distinct study/treatment rows remain for correct counting
-    dplyr::distinct(!!!disvars, .keep_all = TRUE)
+    #dplyr::distinct(!!!disvars, .keep_all = TRUE)
+
 
   # ----------------------------------------------------------------------
   # 5A. COLUMN CHECKS: Participant Size and Class Variable
@@ -200,26 +201,7 @@ multinmatoexcel <- function(nma, ume=NULL,
   # ----------------------------------------------------------------------
   # 5B. CALCULATE TREATMENT COUNTS (Studies and Participants)
   # ----------------------------------------------------------------------
-  if (!is.null(size_col)) {
-    # If a size column is found, perform the standard summarisation
-    trt_counts <- net_dat %>%
-      # Use !!! to splice the list of grouping expressions into group_by
-      dplyr::group_by(!!!group_vars) %>%
-      dplyr::summarise(
-        N_Studies = dplyr::n_distinct(.study),
-        Total_Participants = sum(!!size_col, na.rm=TRUE),
-        .groups = 'drop'
-      )
-  } else {
-    # Fallback if no participant count column is available
-    trt_counts <- net_dat %>%
-      dplyr::group_by(!!!group_vars) %>%
-      dplyr::summarise(N_Studies = dplyr::n_distinct(.study), .groups = 'drop')
-  }
-
-  # Rename columns
-  trt_counts <- trt_counts %>%
-    dplyr::rename(Treatment=treat)
+  trt_counts <- calc_trt_counts(net_dat, group_vars, size_col)
 
   if (class_present) {
     trt_counts <- trt_counts %>%
@@ -263,22 +245,53 @@ multinmatoexcel <- function(nma, ume=NULL,
 
   # --- Treatment Comparisons ---
   pairs_trt_df <- net_dat %>%
-    dplyr::select(.study, .trt) %>%
-    dplyr::distinct() %>%
-    dplyr::inner_join(., ., by = ".study", relationship = "many-to-many") %>%
-    dplyr::filter(as.character(.trt.x) < as.character(.trt.y)) %>%
-    dplyr::group_by(Treat_1 = .trt.x, Treat_2 = .trt.y) %>%
-    dplyr::summarise(N_Studies = dplyr::n_distinct(.study), .groups = 'drop')
+    group_by(.study) %>%
+    mutate(.arm = row_number()) %>%
+    ungroup() %>%
+    select(.study, .trt, .arm) %>%
+    # Self-join by study
+    inner_join(., ., by = ".study", relationship = "many-to-many") %>%
+    # Filter to ensure only look at unique pairs (no arm against itself)
+    filter(.arm.x < .arm.y) %>%
+    # Standardise Treat_1 and Treat_2 alphabetically
+    mutate(
+      Treat_1 = ifelse(as.character(.trt.x) <= as.character(.trt.y),
+                       as.character(.trt.x), as.character(.trt.y)),
+      Treat_2 = ifelse(as.character(.trt.x) <= as.character(.trt.y),
+                       as.character(.trt.y), as.character(.trt.x)),
+      Comparison = paste(Treat_1, "vs", Treat_2)
+    ) %>%
+    # 5. Aggregate unique study counts
+    group_by(Comparison, Treat_1, Treat_2) %>%
+    summarise(N_studies = n_distinct(.study), .groups = "drop") %>%
+    arrange(desc(N_studies)) %>%
+    select(Treat_1, Treat_2, N_studies)
+
 
   # --- Class Comparisons (If class variable is present) ---
   if (class_present) {
     pairs_class_df <- net_dat %>%
-      dplyr::select(.study, .trtclass) %>%
-      dplyr::distinct() %>%
-      dplyr::inner_join(., ., by = ".study", relationship = "many-to-many") %>%
-      dplyr::filter(as.character(.trtclass.x) < as.character(.trtclass.y)) %>%
-      dplyr::group_by(Class_1 = .trtclass.x, Class_2 = .trtclass.y) %>%
-      dplyr::summarise(N_Studies = dplyr::n_distinct(.study), .groups = 'drop')
+      group_by(.study) %>%
+      mutate(.arm = row_number()) %>%
+      ungroup() %>%
+      select(.study, .class, .arm) %>%
+      # Self-join by study
+      inner_join(., ., by = ".study", relationship = "many-to-many") %>%
+      # Filter to ensure only look at unique pairs (no arm against itself)
+      filter(.arm.x < .arm.y) %>%
+      # Standardise Treat_1 and Treat_2 alphabetically
+      mutate(
+        Class_1 = ifelse(as.character(.class.x) <= as.character(.class.y),
+                         as.character(.class.x), as.character(.class.y)),
+        Class_2 = ifelse(as.character(.class.x) <= as.character(.class.y),
+                         as.character(.class.y), as.character(.class.x)),
+        Comparison = paste(Class_1, "vs", Class_2)
+      ) %>%
+      # 5. Aggregate unique study counts
+      group_by(Comparison, Class_1, Class_2) %>%
+      summarise(N_studies = n_distinct(.study), .groups = "drop") %>%
+      arrange(desc(N_studies)) %>%
+      select(Class_1, Class_2, N_studies)
   }
 
 
@@ -288,9 +301,9 @@ multinmatoexcel <- function(nma, ume=NULL,
   # Write Treatment/Class Codes/Counts
   openxlsx::addWorksheet(wb, "Intervention Codes")
   openxlsx::writeData(wb, "Intervention Codes", trt_counts, startRow=1)
-  # if (class_present) {
-  #   openxlsx::writeData(wb, "Intervention Codes", class_counts, startRow=1, startCol=7)
-  # }
+  if (class_present) {
+    openxlsx::writeData(wb, "Intervention Codes", class_counts, startRow=1, startCol=6)
+  }
   apply_std_style(wb, "Intervention Codes", trt_counts)
 
   openxlsx::addWorksheet(wb, "N studies per comparison")
@@ -1186,4 +1199,44 @@ multinmatoexcel <- function(nma, ume=NULL,
 
   message("FINISHED!!!!")
 
+}
+
+
+
+
+
+
+
+
+calc_trt_counts <- function(net_dat, group_vars, size_col) {
+
+  # Check data classes
+  argcheck <- checkmate::makeAssertCollection()
+  checkmate::assertClass(net_dat, "data.frame", add=argcheck)
+  checkmate::assertClass(group_vars, "quosures", add=argcheck)
+  checkmate::assertClass(size_col, "name", add=argcheck)
+  checkmate::reportAssertions(argcheck)
+
+  if (!is.null(size_col)) {
+    # If a size column is found, perform the standard summarisation
+    trt_counts <- net_dat %>%
+      # Use !!! to splice the list of grouping expressions into group_by
+      dplyr::group_by(!!!group_vars) %>%
+      dplyr::summarise(
+        N_Studies = dplyr::n_distinct(.study),
+        Total_Participants = sum(!!size_col, na.rm=TRUE),
+        .groups = 'drop'
+      )
+  } else {
+    # Fallback if no participant count column is available
+    trt_counts <- net_dat %>%
+      dplyr::group_by(!!!group_vars) %>%
+      dplyr::summarise(N_Studies = dplyr::n_distinct(.study), .groups = 'drop')
+  }
+
+  # Rename columns
+  trt_counts <- trt_counts %>%
+    dplyr::rename(Treatment=treat)
+
+  return(trt_counts)
 }
