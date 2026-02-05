@@ -15,7 +15,7 @@ Description: Package for internal use by the Bristol Guidelines Technical Suppor
     the key parameters used for outputs are named consistently to allow handling by the `gtsu` package.
 Depends:
     multinma,
-    dplyr,
+    dplyr (>= 1.2.0),
     officer
 Imports:
     igraph,
